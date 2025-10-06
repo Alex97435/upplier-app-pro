@@ -754,7 +754,7 @@ ADD_EDIT_TEMPLATE = r"""
 
             {% if not supplier %}
             <label for="business_card">Carte de visite :</label>
-            <input type="file" id="business_card" accept="image/*" capture="environment" onchange="uploadCard()">
+            <input type="file" id="business_card" accept="image/*" onchange="uploadCard()">
             <button type="button" class="scan-btn" onclick="triggerCardInput()"><i class="fa fa-id-card"></i> Scanner carte</button>
             {% endif %}
 
@@ -928,24 +928,56 @@ ADD_EDIT_TEMPLATE = r"""
         }
         if (!success) {
             try {
-                const { data: { text } } = await Tesseract.recognize(file, 'eng', { logger: m => console.log(m) });
+                const { data: { text } } = await Tesseract.recognize(file, 'eng+fra', { logger: m => console.log(m) });
                 const lines = text.split(/\n+/).map(l => l.trim()).filter(Boolean);
                 let foundName = '';
                 let foundPhone = '';
+                
+                // Chercher le téléphone d'abord (plus fiable)
                 for (const line of lines) {
-                    if (!foundName && /[a-zA-Z]{2,}/.test(line) && !/\d/.test(line)) {
-                        foundName = line;
-                    }
                     if (!foundPhone) {
-                        const m = line.match(/(\+?\d[\d\s]{6,15}\d)/);
-                        if (m) {
-                            foundPhone = m[1].replace(/\s+/g, '');
+                        // Pattern pour numéro international avec +
+                        const intlMatch = line.match(/\+\d{1,4}[\s\-]?\d{2,4}[\s\-]?\d{2,4}[\s\-]?\d{2,4}[\s\-]?\d{0,4}/);
+                        if (intlMatch) {
+                            foundPhone = intlMatch[0].replace(/[\s\-]/g, '');
+                            continue;
+                        }
+                        // Pattern pour numéro standard
+                        const phoneMatch = line.match(/(\d[\d\s\-]{8,15}\d)/);
+                        if (phoneMatch) {
+                            foundPhone = phoneMatch[1].replace(/[\s\-]/g, '');
+                        }
+                    }
+                }
+                
+                // Chercher le nom (pattern: Prénom Nom avec majuscules)
+                for (const line of lines) {
+                    if (!foundName) {
+                        // Ignorer les lignes trop courtes ou avec des chiffres
+                        if (line.length < 5 || /\d/.test(line)) continue;
+                        
+                        // Chercher pattern Prénom Nom (2+ mots avec majuscule)
+                        const nameMatch = line.match(/^([A-ZÀ-Ö][a-zà-ö]+(?:\s+[A-ZÀ-Ö][a-zà-ö]+)+)$/);
+                        if (nameMatch) {
+                            foundName = nameMatch[1];
+                            continue;
+                        }
+                        
+                        // Fallback: ligne avec 2+ mots et lettres seulement
+                        const words = line.split(/\s+/).filter(w => w.length > 2 && /^[A-Za-zÀ-ÖØ-öø-ÿ]+$/.test(w));
+                        if (words.length >= 2) {
+                            foundName = words.slice(0, 2).join(' ');
                         }
                     }
                     if (foundName && foundPhone) break;
                 }
+                
                 if (foundName) document.getElementById('name').value = foundName;
                 if (foundPhone) document.getElementById('contact').value = foundPhone;
+                
+                if (!foundName && !foundPhone) {
+                    alert('Impossible de lire la carte. Réessayez avec une photo plus nette.');
+                }
             } catch (err) {
                 console.error('Erreur OCR locale :', err);
                 alert('Impossible d\'extraire les informations de la carte.');

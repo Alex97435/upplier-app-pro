@@ -511,11 +511,11 @@ INDEX_TEMPLATE = r"""
                 }
             });
         }
-        // WeChat link - NOUVEAU
+        // WeChat link
         else if (/u\.wechat\.com|weixin\.qq\.com/i.test(text)) {
             wechatLink = text;
         }
-        // WhatsApp link
+        // WhatsApp link - AMÉLIORATION : extraire le numéro si possible
         else if (/wa\.me\//i.test(text)) {
             const numMatch = text.match(/wa\.me\/([0-9]+)/i);
             if (numMatch) {
@@ -561,10 +561,10 @@ INDEX_TEMPLATE = r"""
             if (result.name) params.push('name=' + encodeURIComponent(result.name));
             if (result.phone) {
                 params.push('contact=' + encodeURIComponent(result.phone));
-            } else if (result.whatsappLink) {
+            }
+            if (result.whatsappLink) {
                 params.push('whatsapp=' + encodeURIComponent(result.whatsappLink));
             }
-            // NOUVEAU : gérer WeChat
             if (result.wechatLink) {
                 params.push('wechat=' + encodeURIComponent(result.wechatLink));
             }
@@ -646,6 +646,10 @@ ADD_EDIT_TEMPLATE = r"""
             background-color: #15202b;
             color: #f5f5f5;
         }
+        input[readonly] {
+            background-color: #1a2633;
+            cursor: pointer;
+        }
         textarea {
             resize: vertical;
             min-height: 80px;
@@ -716,6 +720,37 @@ ADD_EDIT_TEMPLATE = r"""
         .scan-btn i {
             margin-right: 6px;
         }
+        .link-container {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .link-container input {
+            flex: 1;
+        }
+        .link-btn {
+            padding: 8px 12px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            color: white;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;
+        }
+        .link-btn.whatsapp {
+            background: #25D366;
+        }
+        .link-btn.wechat {
+            background: #09B83E;
+        }
+        .link-btn.edit {
+            background: #5b7bda;
+            min-width: 40px;
+            justify-content: center;
+        }
     </style>
 </head>
 <body>
@@ -740,10 +775,26 @@ ADD_EDIT_TEMPLATE = r"""
             <input type="text" id="contact" name="contact" value="{{ supplier['contact'] if supplier else (pre_contact if pre_contact else '') }}">
 
             <label for="whatsapp">Lien WhatsApp :</label>
-            <input type="text" id="whatsapp" name="whatsapp" value="{{ supplier['whatsapp_link'] if supplier else (pre_whatsapp if pre_whatsapp else '') }}" placeholder="https://wa.me/Numéro">
+            <div class="link-container">
+                <input type="text" id="whatsapp" name="whatsapp" value="{{ supplier['whatsapp_link'] if supplier else (pre_whatsapp if pre_whatsapp else '') }}" placeholder="https://wa.me/Numéro" readonly>
+                <button type="button" class="link-btn edit" onclick="toggleEdit('whatsapp')" title="Modifier">
+                    <i class="fa fa-edit"></i>
+                </button>
+                <button type="button" id="openWhatsApp" class="link-btn whatsapp" onclick="openLink('whatsapp')" style="display: none;">
+                    <i class="fab fa-whatsapp"></i> Ouvrir
+                </button>
+            </div>
 
             <label for="wechat">Lien WeChat :</label>
-            <input type="text" id="wechat" name="wechat" value="{{ supplier['wechat_link'] if supplier else (pre_wechat if pre_wechat else '') }}" placeholder="Lien WeChat">
+            <div class="link-container">
+                <input type="text" id="wechat" name="wechat" value="{{ supplier['wechat_link'] if supplier else (pre_wechat if pre_wechat else '') }}" placeholder="Lien WeChat" readonly>
+                <button type="button" class="link-btn edit" onclick="toggleEdit('wechat')" title="Modifier">
+                    <i class="fa fa-edit"></i>
+                </button>
+                <button type="button" id="openWeChat" class="link-btn wechat" onclick="openLink('wechat')" style="display: none;">
+                    <i class="fab fa-weixin"></i> Ouvrir
+                </button>
+            </div>
 
             <label for="rating">Notation :</label>
             <select id="rating" name="rating">
@@ -793,7 +844,9 @@ ADD_EDIT_TEMPLATE = r"""
         let name = '';
         let phone = '';
         let whatsappLink = '';
+        let wechatLink = '';
         const text = decodedText.trim();
+        
         if (/BEGIN:VCARD/i.test(text)) {
             const lines = text.split(/\r?\n/);
             lines.forEach(line => {
@@ -829,6 +882,11 @@ ADD_EDIT_TEMPLATE = r"""
                 }
             });
         }
+        // WeChat link
+        else if (/u\.wechat\.com|weixin\.qq\.com/i.test(text)) {
+            wechatLink = text;
+        }
+        // WhatsApp link - AMÉLIORATION : extraire le numéro
         else if (/wa\.me\//i.test(text)) {
             const numMatch = text.match(/wa\.me\/([0-9]+)/i);
             if (numMatch) {
@@ -838,6 +896,7 @@ ADD_EDIT_TEMPLATE = r"""
                 whatsappLink = text;
             }
         }
+        
         if (!name || !phone) {
             const parts = text.split(/[,;]/);
             for (let i = 0; i < parts.length; i++) {
@@ -860,7 +919,7 @@ ADD_EDIT_TEMPLATE = r"""
                 }
             }
         }
-        return { name, phone, whatsappLink };
+        return { name, phone, whatsappLink, wechatLink };
     }
 
     function onScanSuccess(decodedText, decodedResult) {
@@ -871,11 +930,14 @@ ADD_EDIT_TEMPLATE = r"""
         if (result.phone) {
             document.getElementById('contact').value = result.phone;
         }
-        if (!result.phone && result.whatsappLink) {
-            document.getElementById('whatsapp').value = result.whatsappLink;
-        } else if (result.whatsappLink) {
+        if (result.whatsappLink) {
             document.getElementById('whatsapp').value = result.whatsappLink;
         }
+        if (result.wechatLink) {
+            document.getElementById('wechat').value = result.wechatLink;
+        }
+        
+        updateLinkButtons();
         stopScanner();
     }
 
@@ -946,16 +1008,13 @@ ADD_EDIT_TEMPLATE = r"""
                 let foundName = '';
                 let foundPhone = '';
                 
-                // Chercher le téléphone d'abord (plus fiable)
                 for (const line of lines) {
                     if (!foundPhone) {
-                        // Pattern pour numéro international avec +
                         const intlMatch = line.match(/\+\d{1,4}[\s\-]?\d{2,4}[\s\-]?\d{2,4}[\s\-]?\d{2,4}[\s\-]?\d{0,4}/);
                         if (intlMatch) {
                             foundPhone = intlMatch[0].replace(/[\s\-]/g, '');
                             continue;
                         }
-                        // Pattern pour numéro standard
                         const phoneMatch = line.match(/(\d[\d\s\-]{8,15}\d)/);
                         if (phoneMatch) {
                             foundPhone = phoneMatch[1].replace(/[\s\-]/g, '');
@@ -963,20 +1022,14 @@ ADD_EDIT_TEMPLATE = r"""
                     }
                 }
                 
-                // Chercher le nom (pattern: Prénom Nom avec majuscules)
                 for (const line of lines) {
                     if (!foundName) {
-                        // Ignorer les lignes trop courtes ou avec des chiffres
                         if (line.length < 5 || /\d/.test(line)) continue;
-                        
-                        // Chercher pattern Prénom Nom (2+ mots avec majuscule)
                         const nameMatch = line.match(/^([A-ZÀ-Ö][a-zà-ö]+(?:\s+[A-ZÀ-Ö][a-zà-ö]+)+)$/);
                         if (nameMatch) {
                             foundName = nameMatch[1];
                             continue;
                         }
-                        
-                        // Fallback: ligne avec 2+ mots et lettres seulement
                         const words = line.split(/\s+/).filter(w => w.length > 2 && /^[A-Za-zÀ-ÖØ-öø-ÿ]+$/.test(w));
                         if (words.length >= 2) {
                             foundName = words.slice(0, 2).join(' ');
@@ -987,6 +1040,8 @@ ADD_EDIT_TEMPLATE = r"""
                 
                 if (foundName) document.getElementById('name').value = foundName;
                 if (foundPhone) document.getElementById('contact').value = foundPhone;
+                
+                updateLinkButtons();
                 
                 if (!foundName && !foundPhone) {
                     alert('Impossible de lire la carte. Réessayez avec une photo plus nette.');
@@ -1008,6 +1063,71 @@ ADD_EDIT_TEMPLATE = r"""
             input.click();
         }
     }
+    
+    // Basculer entre lecture seule et éditable
+    function toggleEdit(fieldName) {
+        const input = document.getElementById(fieldName);
+        if (!input) return;
+        
+        if (input.hasAttribute('readonly')) {
+            input.removeAttribute('readonly');
+            input.focus();
+            input.style.backgroundColor = '#15202b';
+        } else {
+            input.setAttribute('readonly', 'readonly');
+            input.style.backgroundColor = '#1a2633';
+        }
+    }
+    
+    // Ouvrir les liens WhatsApp/WeChat
+    function openLink(type) {
+        const input = document.getElementById(type);
+        if (input && input.value) {
+            window.open(input.value, '_blank');
+        }
+    }
+    
+    // Afficher/cacher les boutons "Ouvrir" selon le contenu
+    function updateLinkButtons() {
+        const whatsappInput = document.getElementById('whatsapp');
+        const wechatInput = document.getElementById('wechat');
+        const whatsappBtn = document.getElementById('openWhatsApp');
+        const wechatBtn = document.getElementById('openWeChat');
+        
+        if (whatsappInput && whatsappBtn) {
+            whatsappBtn.style.display = whatsappInput.value ? 'flex' : 'none';
+        }
+        if (wechatInput && wechatBtn) {
+            wechatBtn.style.display = wechatInput.value ? 'flex' : 'none';
+        }
+    }
+    
+    // Initialisation au chargement
+    document.addEventListener('DOMContentLoaded', function() {
+        updateLinkButtons();
+        
+        const whatsappInput = document.getElementById('whatsapp');
+        const wechatInput = document.getElementById('wechat');
+        
+        if (whatsappInput) {
+            whatsappInput.addEventListener('input', updateLinkButtons);
+            // Cliquer sur le champ en readonly ouvre le lien
+            whatsappInput.addEventListener('click', function() {
+                if (this.hasAttribute('readonly') && this.value) {
+                    openLink('whatsapp');
+                }
+            });
+        }
+        if (wechatInput) {
+            wechatInput.addEventListener('input', updateLinkButtons);
+            // Cliquer sur le champ en readonly ouvre le lien
+            wechatInput.addEventListener('click', function() {
+                if (this.hasAttribute('readonly') && this.value) {
+                    openLink('wechat');
+                }
+            });
+        }
+    });
     </script>
 </body>
 </html>

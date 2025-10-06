@@ -1,6 +1,4 @@
-import awsgi
-from supplier_app import app as flask_app
+from supplier_app import app
 
-# Vercel appelle cette fonction
-def handler(event, context):
-    return awsgi.response(flask_app, event, context)
+# Export pour Vercel
+app = app

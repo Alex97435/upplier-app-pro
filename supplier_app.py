@@ -1263,6 +1263,22 @@ DETAIL_TEMPLATE = """
         <div class="info"><label>Catégorie :</label> {{ supplier['category'] }}</div>
         <div class="info"><label>Description :</label> {{ supplier['description'] or '-' }}</div>
         <div class="info"><label>Numéro de téléphone :</label> {{ supplier['contact'] or '-' }}</div>
+        <div class="info">
+            <label>Contacts :</label>
+            {% if supplier['whatsapp_link'] %}
+                <a href="{{ supplier['whatsapp_link'] }}" target="_blank" style="color: #25D366; margin-right: 15px; text-decoration: none; font-size: 18px;" title="Ouvrir WhatsApp">
+                    <i class="fab fa-whatsapp"></i> WhatsApp
+                </a>
+            {% endif %}
+            {% if supplier['wechat_link'] %}
+                <a href="{{ supplier['wechat_link'] }}" target="_blank" style="color: #09B83E; text-decoration: none; font-size: 18px;" title="Ouvrir WeChat">
+                    <i class="fab fa-weixin"></i> WeChat
+                </a>
+            {% endif %}
+            {% if not supplier['whatsapp_link'] and not supplier['wechat_link'] %}
+                -
+            {% endif %}
+        </div>
         <div class="info badges">
             {% if supplier['rating'] == 'green' %}
                 <span class="badge rating-green"><i class="fa fa-star"></i> Top</span>

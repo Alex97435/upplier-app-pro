@@ -69,6 +69,27 @@ def init_db():
     conn = get_db()
     cursor = conn.cursor()
     
+    # Table users
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL
+        )
+    """)
+    
+    # Table trade_shows (salons)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS trade_shows (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            event_date DATE,
+            location TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            user_id INTEGER
+        )
+    """)
+    
     # Table suppliers
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS suppliers (
@@ -83,17 +104,20 @@ def init_db():
             photo_filename TEXT,
             catalog_filename TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            user_id INTEGER
+            user_id INTEGER,
+            trade_show_id INTEGER
         )
     """)
     
-    # Table users
+    # Ajouter la colonne trade_show_id si elle n'existe pas déjà
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id SERIAL PRIMARY KEY,
-            username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL
-        )
+        DO $$ 
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                          WHERE table_name='suppliers' AND column_name='trade_show_id') THEN
+                ALTER TABLE suppliers ADD COLUMN trade_show_id INTEGER;
+            END IF;
+        END $$;
     """)
     
     conn.commit()
@@ -476,6 +500,7 @@ INDEX_TEMPLATE = r"""
         <a href="{{ url_for('list_users') }}" class="admin-users-link" title="Gestion des utilisateurs"><i class="fa fa-users"></i></a>
         <a href="{{ url_for('register') }}" class="admin-link" title="Créer un utilisateur"><i class="fa fa-user-plus"></i></a>
         {% endif %}
+        <a href="{{ url_for('list_trade_shows') }}" style="position: absolute; top: 20px; right: {% if is_admin %}110px{% else %}50px{% endif %}; color: #799bb9; font-size: 20px; text-decoration: none;" title="Gérer les salons"><i class="fa fa-calendar-alt"></i></a>
     </header>
     <div class="container">
         <div class="search-container">
@@ -523,6 +548,19 @@ INDEX_TEMPLATE = r"""
                                 </label>
                                 {% endfor %}
                             </div>
+                        </div>
+                        
+                        <div class="filter-group">
+                            <div class="filter-group-title">Salon professionnel</div>
+                            <select name="trade_show" style="background-color: #273a4b; color: #f5f5f5; border: 1px solid #374d65; border-radius: 6px; padding: 6px; width: 100%;">
+                                <option value="">Tous les salons</option>
+                                <option value="none" {% if selected_trade_show == 'none' %}selected{% endif %}>Sans salon</option>
+                                {% for show in trade_shows %}
+                                <option value="{{ show['id'] }}" {% if selected_trade_show == show['id']|string %}selected{% endif %}>
+                                    {{ show['name'] }} {% if show['event_date'] %}({{ show['event_date'].strftime('%d/%m/%Y') }}){% endif %}
+                                </option>
+                                {% endfor %}
+                            </select>
                         </div>
                         
                         <div class="filter-group">
@@ -753,13 +791,15 @@ INDEX_TEMPLATE = r"""
         });
         // Réinitialiser le tri
         document.querySelector('#filter-form select[name="sort"]').value = '';
+        // Réinitialiser le salon
+        document.querySelector('#filter-form select[name="trade_show"]').value = '';
         // Soumettre le formulaire
         document.getElementById('filter-form').submit();
     }
     
     // Ouvrir automatiquement les filtres s'il y en a d'actifs
     document.addEventListener('DOMContentLoaded', function() {
-        const hasActiveFilters = {{ 'true' if (selected_ratings or selected_categories) else 'false' }};
+        const hasActiveFilters = {{ 'true' if (selected_ratings or selected_categories or selected_trade_show) else 'false' }};
         if (hasActiveFilters) {
             toggleFilters();
         }
@@ -929,6 +969,16 @@ ADD_EDIT_TEMPLATE = r"""
                 <option value="">– Sélectionner –</option>
                 {% for cat in categories %}
                     <option value="{{ cat }}" {% if (supplier and supplier['category'] == cat) %}selected{% endif %}>{{ cat.capitalize() }}</option>
+                {% endfor %}
+            </select>
+
+            <label for="trade_show">Salon professionnel (optionnel) :</label>
+            <select id="trade_show" name="trade_show">
+                <option value="">– Aucun salon –</option>
+                {% for show in trade_shows %}
+                    <option value="{{ show['id'] }}" {% if (supplier and supplier['trade_show_id'] == show['id']) %}selected{% endif %}>
+                        {{ show['name'] }} {% if show['event_date'] %}({{ show['event_date'].strftime('%d/%m/%Y') }}){% endif %}
+                    </option>
                 {% endfor %}
             </select>
 
@@ -1609,6 +1659,107 @@ DETAIL_TEMPLATE = """
 </html>
 """
 
+TRADE_SHOWS_TEMPLATE = """
+<!doctype html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestion des salons</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <style>
+        body { background-color: #1e2a38; color: #f5f5f5; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; }
+        .container { max-width: 900px; margin: 40px auto; background-color: #273a4b; padding: 20px 30px; border-radius: 10px; }
+        h1 { font-size: 24px; margin-bottom: 20px; text-align: center; }
+        .add-btn { background-color: #5b7bda; color: #fff; padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-weight: 500; text-decoration: none; display: inline-block; margin-bottom: 15px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 12px; border-bottom: 1px solid #374d65; text-align: left; }
+        th { color: #a0b0c0; font-weight: 500; }
+        a.action-link { color: #5b7bda; text-decoration: none; margin-right: 12px; }
+        a.delete-link { color: #d9534f; text-decoration: none; }
+        .link-back { display: inline-block; margin-top: 20px; color: #77a8cf; text-decoration: none; }
+        .supplier-count { color: #a0b0c0; font-size: 13px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Gestion des salons professionnels</h1>
+        <a href="{{ url_for('add_trade_show') }}" class="add-btn"><i class="fa fa-plus"></i> Créer un salon</a>
+        <table>
+            <tr>
+                <th>Nom du salon</th>
+                <th>Date</th>
+                <th>Lieu</th>
+                <th>Fournisseurs</th>
+                <th>Actions</th>
+            </tr>
+            {% for show in trade_shows %}
+            <tr>
+                <td>{{ show['name'] }}</td>
+                <td>{{ show['event_date'].strftime('%d/%m/%Y') if show['event_date'] else '-' }}</td>
+                <td>{{ show['location'] or '-' }}</td>
+                <td class="supplier-count">{{ show['supplier_count'] }} fournisseur(s)</td>
+                <td>
+                    <a href="{{ url_for('edit_trade_show', show_id=show['id']) }}" class="action-link"><i class="fa fa-edit"></i> Modifier</a>
+                    <a href="{{ url_for('delete_trade_show', show_id=show['id']) }}" class="delete-link" onclick="return confirm('Supprimer ce salon ? Les fournisseurs associés ne seront pas supprimés.');"><i class="fa fa-trash"></i> Supprimer</a>
+                </td>
+            </tr>
+            {% endfor %}
+            {% if not trade_shows %}
+            <tr><td colspan="5" style="text-align: center; color: #a0b0c0;">Aucun salon créé</td></tr>
+            {% endif %}
+        </table>
+        <a href="{{ url_for('index') }}" class="link-back"><i class="fa fa-arrow-left"></i> Retour au tableau de bord</a>
+    </div>
+</body>
+</html>
+"""
+
+TRADE_SHOW_FORM_TEMPLATE = """
+<!doctype html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ 'Modifier' if show else 'Créer' }} un salon</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <style>
+        body { background-color: #1e2a38; color: #f5f5f5; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; }
+        .container { max-width: 600px; margin: 80px auto; background-color: #273a4b; padding: 20px 30px; border-radius: 10px; }
+        h1 { font-size: 22px; margin-bottom: 20px; text-align: center; }
+        label { display: block; margin-top: 12px; font-weight: 500; }
+        input[type="text"], input[type="date"] { width: 100%; padding: 8px; margin-top: 4px; border: 1px solid #374d65; border-radius: 6px; background-color: #15202b; color: #f5f5f5; }
+        .actions { margin-top: 20px; display: flex; justify-content: space-between; align-items: center; }
+        .btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; }
+        .btn-primary { background-color: #5b7bda; color: #fff; }
+        .btn-secondary { background-color: #495867; color: #dcdcdc; text-decoration: none; }
+        .error { color: #f28c8c; margin-top: 10px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>{{ 'Modifier' if show else 'Créer' }} un salon professionnel</h1>
+        {% if error %}<div class="error">{{ error }}</div>{% endif %}
+        <form method="post">
+            <label for="name">Nom du salon :</label>
+            <input type="text" id="name" name="name" required value="{{ show['name'] if show else '' }}">
+
+            <label for="event_date">Date de l'événement :</label>
+            <input type="date" id="event_date" name="event_date" value="{{ show['event_date'].strftime('%Y-%m-%d') if show and show['event_date'] else '' }}">
+
+            <label for="location">Lieu :</label>
+            <input type="text" id="location" name="location" placeholder="Ville, pays" value="{{ show['location'] if show else '' }}">
+
+            <div class="actions">
+                <button type="submit" class="btn btn-primary">{{ 'Mettre à jour' if show else 'Créer' }}</button>
+                <a href="{{ url_for('list_trade_shows') }}" class="btn btn-secondary">Annuler</a>
+            </div>
+        </form>
+    </div>
+</body>
+</html>
+"""
+
 
 ###############################################################################
 # Routes
@@ -1619,6 +1770,7 @@ DETAIL_TEMPLATE = """
 def index():
     search_query = request.args.get('search', '').strip()
     sort_key = request.args.get('sort', '').strip()
+    selected_trade_show = request.args.get('trade_show', '').strip()
     
     # Récupérer les filtres multiples
     selected_ratings = request.args.getlist('rating')  # Liste des couleurs cochées
@@ -1627,6 +1779,10 @@ def index():
     conn = get_db()
     cursor = conn.cursor()
     user_id = session['user_id']
+    
+    # Récupérer la liste des salons de l'utilisateur
+    cursor.execute("SELECT * FROM trade_shows WHERE user_id = %s ORDER BY event_date DESC NULLS LAST, name ASC", (user_id,))
+    trade_shows = cursor.fetchall()
     
     sql = "SELECT * FROM suppliers WHERE user_id = %s"
     params = [user_id]
@@ -1648,6 +1804,13 @@ def index():
         placeholders = ','.join(['%s'] * len(selected_categories))
         sql += f" AND category IN ({placeholders})"
         params.extend(selected_categories)
+    
+    # Filtre par salon
+    if selected_trade_show == 'none':
+        sql += " AND trade_show_id IS NULL"
+    elif selected_trade_show:
+        sql += " AND trade_show_id = %s"
+        params.append(int(selected_trade_show))
     
     # Tri
     if sort_key == 'name':
@@ -1674,6 +1837,8 @@ def index():
         sort_key=sort_key,
         selected_ratings=selected_ratings,
         selected_categories=selected_categories,
+        selected_trade_show=selected_trade_show,
+        trade_shows=trade_shows,
         all_categories=CATEGORIES,
         total_suppliers=total,
         username=username,
@@ -1697,6 +1862,7 @@ def add_supplier():
         whatsapp = request.form.get('whatsapp', '').strip()
         wechat = request.form.get('wechat', '').strip()
         rating = request.form.get('rating', '').strip()
+        trade_show_id = request.form.get('trade_show', '').strip()
 
         photo_filename = save_upload(request.files.get('photo'))
         catalog_filename = save_upload(request.files.get('catalog'))
@@ -1705,10 +1871,13 @@ def add_supplier():
         cursor = conn.cursor()
         user_id = session['user_id']
         
+        # Convertir trade_show_id en entier ou NULL
+        trade_show_val = int(trade_show_id) if trade_show_id else None
+        
         cursor.execute(
-            """INSERT INTO suppliers (name, category, description, contact, whatsapp_link, wechat_link, rating, photo_filename, catalog_filename, user_id) 
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-            (name, category, description, contact, whatsapp, wechat, rating, photo_filename, catalog_filename, user_id)
+            """INSERT INTO suppliers (name, category, description, contact, whatsapp_link, wechat_link, rating, photo_filename, catalog_filename, user_id, trade_show_id) 
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (name, category, description, contact, whatsapp, wechat, rating, photo_filename, catalog_filename, user_id, trade_show_val)
         )
         conn.commit()
         cursor.close()
@@ -1722,6 +1891,14 @@ def add_supplier():
     pre_wechat = request.args.get('wechat', '').strip()
     username = session.get('username', 'Utilisateur')
     
+    # Récupérer la liste des salons
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM trade_shows WHERE user_id = %s ORDER BY event_date DESC NULLS LAST, name ASC", (session['user_id'],))
+    trade_shows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    
     return render_template_string(
         ADD_EDIT_TEMPLATE,
         supplier=None,
@@ -1730,6 +1907,7 @@ def add_supplier():
         pre_whatsapp=pre_whatsapp,
         pre_wechat=pre_wechat,
         categories=CATEGORIES,
+        trade_shows=trade_shows,
         username=username
     )
 
@@ -1802,6 +1980,7 @@ def edit_supplier(supplier_id: int):
         whatsapp = request.form.get('whatsapp', '').strip()
         wechat = request.form.get('wechat', '').strip()
         rating = request.form.get('rating', '').strip()
+        trade_show_id = request.form.get('trade_show', '').strip()
 
         new_photo = request.files.get('photo')
         photo_filename = supplier['photo_filename']
@@ -1821,12 +2000,15 @@ def edit_supplier(supplier_id: int):
                     os.remove(old_path)
             catalog_filename = save_upload(new_catalog)
 
+        # Convertir trade_show_id en entier ou NULL
+        trade_show_val = int(trade_show_id) if trade_show_id else None
+
         cursor.execute(
             """UPDATE suppliers
                SET name = %s, category = %s, description = %s, contact = %s, whatsapp_link = %s, wechat_link = %s, rating = %s,
-                   photo_filename = %s, catalog_filename = %s
+                   photo_filename = %s, catalog_filename = %s, trade_show_id = %s
                WHERE id = %s""",
-            (name, category, description, contact, whatsapp, wechat, rating, photo_filename, catalog_filename, supplier_id)
+            (name, category, description, contact, whatsapp, wechat, rating, photo_filename, catalog_filename, trade_show_val, supplier_id)
         )
         conn.commit()
         cursor.close()
@@ -1835,6 +2017,11 @@ def edit_supplier(supplier_id: int):
         return redirect(url_for('index'))
     
     username = session.get('username', 'Utilisateur')
+    
+    # Récupérer la liste des salons
+    cursor.execute("SELECT * FROM trade_shows WHERE user_id = %s ORDER BY event_date DESC NULLS LAST, name ASC", (session['user_id'],))
+    trade_shows = cursor.fetchall()
+    
     cursor.close()
     conn.close()
     
@@ -1844,6 +2031,7 @@ def edit_supplier(supplier_id: int):
         pre_name='',
         pre_contact='',
         categories=CATEGORIES,
+        trade_shows=trade_shows,
         username=username
     )
 
@@ -1887,6 +2075,143 @@ def delete_supplier(supplier_id: int):
     conn.close()
     
     return redirect(url_for('index'))
+
+
+@app.route('/trade-shows')
+@login_required
+def list_trade_shows():
+    """Liste tous les salons de l'utilisateur avec le compte de fournisseurs"""
+    conn = get_db()
+    cursor = conn.cursor()
+    user_id = session['user_id']
+    
+    # Récupérer les salons avec le nombre de fournisseurs associés
+    cursor.execute("""
+        SELECT ts.*, 
+               COUNT(s.id) as supplier_count
+        FROM trade_shows ts
+        LEFT JOIN suppliers s ON ts.id = s.trade_show_id AND s.user_id = %s
+        WHERE ts.user_id = %s
+        GROUP BY ts.id
+        ORDER BY ts.event_date DESC NULLS LAST, ts.name ASC
+    """, (user_id, user_id))
+    trade_shows = cursor.fetchall()
+    
+    cursor.close()
+    conn.close()
+    
+    return render_template_string(TRADE_SHOWS_TEMPLATE, trade_shows=trade_shows)
+
+
+@app.route('/trade-shows/add', methods=['GET', 'POST'])
+@login_required
+def add_trade_show():
+    """Créer un nouveau salon"""
+    error = ''
+    if request.method == 'POST':
+        name = request.form.get('name', '').strip()
+        event_date = request.form.get('event_date', '').strip()
+        location = request.form.get('location', '').strip()
+        
+        if not name:
+            error = "Le nom du salon est requis."
+        else:
+            conn = get_db()
+            cursor = conn.cursor()
+            user_id = session['user_id']
+            
+            # Convertir la date si fournie, sinon NULL
+            date_val = event_date if event_date else None
+            
+            cursor.execute(
+                "INSERT INTO trade_shows (name, event_date, location, user_id) VALUES (%s, %s, %s, %s)",
+                (name, date_val, location, user_id)
+            )
+            conn.commit()
+            cursor.close()
+            conn.close()
+            
+            return redirect(url_for('list_trade_shows'))
+    
+    return render_template_string(TRADE_SHOW_FORM_TEMPLATE, show=None, error=error)
+
+
+@app.route('/trade-shows/<int:show_id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_trade_show(show_id: int):
+    """Modifier un salon existant"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM trade_shows WHERE id = %s", (show_id,))
+    show = cursor.fetchone()
+    
+    if show is None:
+        cursor.close()
+        conn.close()
+        abort(404)
+    
+    if show['user_id'] is not None and show['user_id'] != session.get('user_id'):
+        cursor.close()
+        conn.close()
+        abort(403)
+    
+    error = ''
+    if request.method == 'POST':
+        name = request.form.get('name', '').strip()
+        event_date = request.form.get('event_date', '').strip()
+        location = request.form.get('location', '').strip()
+        
+        if not name:
+            error = "Le nom du salon est requis."
+        else:
+            # Convertir la date si fournie, sinon NULL
+            date_val = event_date if event_date else None
+            
+            cursor.execute(
+                "UPDATE trade_shows SET name = %s, event_date = %s, location = %s WHERE id = %s",
+                (name, date_val, location, show_id)
+            )
+            conn.commit()
+            cursor.close()
+            conn.close()
+            
+            return redirect(url_for('list_trade_shows'))
+    
+    cursor.close()
+    conn.close()
+    
+    return render_template_string(TRADE_SHOW_FORM_TEMPLATE, show=show, error=error)
+
+
+@app.route('/trade-shows/<int:show_id>/delete')
+@login_required
+def delete_trade_show(show_id: int):
+    """Supprimer un salon (les fournisseurs associés gardent trade_show_id = NULL)"""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM trade_shows WHERE id = %s", (show_id,))
+    show = cursor.fetchone()
+    
+    if show is None:
+        cursor.close()
+        conn.close()
+        abort(404)
+    
+    if show['user_id'] is not None and show['user_id'] != session.get('user_id'):
+        cursor.close()
+        conn.close()
+        abort(403)
+    
+    # Mettre à NULL le trade_show_id pour tous les fournisseurs liés
+    cursor.execute("UPDATE suppliers SET trade_show_id = NULL WHERE trade_show_id = %s", (show_id,))
+    
+    # Supprimer le salon
+    cursor.execute("DELETE FROM trade_shows WHERE id = %s", (show_id,))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    
+    return redirect(url_for('list_trade_shows'))
 
 
 @app.route('/register', methods=['GET', 'POST'])

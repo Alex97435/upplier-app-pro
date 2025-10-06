@@ -472,7 +472,9 @@ INDEX_TEMPLATE = r"""
         let name = '';
         let phone = '';
         let whatsappLink = '';
+        let wechatLink = '';
         const text = decodedText.trim();
+        // vCard format (BEGIN:VCARD)
         if (/BEGIN:VCARD/i.test(text)) {
             const lines = text.split(/\r?\n/);
             lines.forEach(line => {
@@ -492,6 +494,7 @@ INDEX_TEMPLATE = r"""
                 }
             });
         }
+        // MECARD format
         else if (/^MECARD:/i.test(text)) {
             const content = text.substring(7);
             const pairs = content.split(';');
@@ -508,12 +511,18 @@ INDEX_TEMPLATE = r"""
                 }
             });
         }
+        // WeChat link - NOUVEAU
+        else if (/u\.wechat\.com|weixin\.qq\.com/i.test(text)) {
+            wechatLink = text;
+        }
+        // WhatsApp link
         else if (/wa\.me\//i.test(text)) {
             const numMatch = text.match(/wa\.me\/([0-9]+)/i);
             if (numMatch) {
                 phone = numMatch[1];
                 whatsappLink = `https://wa.me/${numMatch[1]}`;
             } else {
+                // Lien WhatsApp type /message/CODE sans numéro extractible
                 whatsappLink = text;
             }
         }
@@ -539,7 +548,7 @@ INDEX_TEMPLATE = r"""
                 }
             }
         }
-        return { name, phone, whatsappLink };
+        return { name, phone, whatsappLink, wechatLink };
     }
 
     function onScanSuccess(decodedText, decodedResult) {
@@ -554,6 +563,10 @@ INDEX_TEMPLATE = r"""
                 params.push('contact=' + encodeURIComponent(result.phone));
             } else if (result.whatsappLink) {
                 params.push('whatsapp=' + encodeURIComponent(result.whatsappLink));
+            }
+            // NOUVEAU : gérer WeChat
+            if (result.wechatLink) {
+                params.push('wechat=' + encodeURIComponent(result.wechatLink));
             }
             if (params.length > 0) {
                 url += '?' + params.join('&');
@@ -730,7 +743,7 @@ ADD_EDIT_TEMPLATE = r"""
             <input type="text" id="whatsapp" name="whatsapp" value="{{ supplier['whatsapp_link'] if supplier else (pre_whatsapp if pre_whatsapp else '') }}" placeholder="https://wa.me/Numéro">
 
             <label for="wechat">Lien WeChat :</label>
-            <input type="text" id="wechat" name="wechat" value="{{ supplier['wechat_link'] if supplier else '' }}" placeholder="Lien WeChat">
+            <input type="text" id="wechat" name="wechat" value="{{ supplier['wechat_link'] if supplier else (pre_wechat if pre_wechat else '') }}" placeholder="Lien WeChat">
 
             <label for="rating">Notation :</label>
             <select id="rating" name="rating">
@@ -1382,6 +1395,7 @@ def add_supplier():
     pre_name = request.args.get('name', '').strip()
     pre_contact = request.args.get('contact', '').strip()
     pre_whatsapp = request.args.get('whatsapp', '').strip()
+    pre_wechat = request.args.get('wechat', '').strip()
     username = session.get('username', 'Utilisateur')
     
     return render_template_string(
@@ -1390,6 +1404,7 @@ def add_supplier():
         pre_name=pre_name,
         pre_contact=pre_contact,
         pre_whatsapp=pre_whatsapp,
+        pre_wechat=pre_wechat,
         categories=CATEGORIES,
         username=username
     )

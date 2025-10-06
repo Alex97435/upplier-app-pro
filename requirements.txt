@@ -1,6 +1,5 @@
-Flask==3.1.2
+flask
 qrcode[pil]
 requests
-awsgi
-Werkzeug
-azure-ai-documentintelligence
+werkzeug
+psycopg2-binary

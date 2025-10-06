@@ -1,0 +1,1 @@
+web: gunicorn supplier_app:app

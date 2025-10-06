@@ -1,2 +1,1 @@
-# upplier-app-pro
-Gestion de fournisseurs pour TradeLinkPro
+Templates placeholder (this app uses inline templates). Provided for completeness.

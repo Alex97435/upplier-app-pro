@@ -1,3 +1,6 @@
-Flask>=3.1.2
-qrcode[pil]>=8.2
-requests>=2.31.0
+Flask==3.1.2
+qrcode[pil]
+requests
+awsgi
+Werkzeug
+azure-ai-documentintelligence

@@ -247,12 +247,11 @@ INDEX_TEMPLATE = r"""
         }
         .search-container {
             display: flex;
-            justify-content: space-between;
-            align-items: center;
+            flex-direction: column;
+            gap: 12px;
             margin-bottom: 20px;
         }
         .search-form {
-            flex: 1;
             display: flex;
             align-items: center;
             background-color: #15202b;
@@ -273,6 +272,81 @@ INDEX_TEMPLATE = r"""
             color: #799bb9;
             font-size: 18px;
             cursor: pointer;
+        }
+        .filters-section {
+            background-color: #15202b;
+            border-radius: 8px;
+            padding: 12px;
+        }
+        .filter-toggle {
+            color: #799bb9;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 500;
+            margin-bottom: 12px;
+        }
+        .filter-toggle:hover {
+            color: #9fb9d9;
+        }
+        .filters-content {
+            display: none;
+        }
+        .filters-content.active {
+            display: block;
+        }
+        .filter-group {
+            margin-bottom: 12px;
+        }
+        .filter-group-title {
+            color: #a0b0c0;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+        .filter-options {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .filter-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 10px;
+            background-color: #273a4b;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: background-color 0.2s;
+        }
+        .filter-checkbox:hover {
+            background-color: #344b65;
+        }
+        .filter-checkbox input[type="checkbox"] {
+            cursor: pointer;
+        }
+        .filter-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+        }
+        .filter-btn {
+            padding: 6px 14px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        .filter-btn-apply {
+            background-color: #5b7bda;
+            color: #fff;
+        }
+        .filter-btn-reset {
+            background-color: #495867;
+            color: #dcdcdc;
         }
         .cards {
             display: flex;
@@ -405,15 +479,73 @@ INDEX_TEMPLATE = r"""
     </header>
     <div class="container">
         <div class="search-container">
-            <form method="get" action="{{ url_for('index') }}" class="search-form" style="flex: 1; display: flex; align-items: center; gap: 6px;">
-                <input type="text" name="search" placeholder="Rechercher un fournisseur..." value="{{ search_query }}" autocomplete="off" style="flex: 1;">
-                <button type="submit" style="background: none; border: none; color: #799bb9; font-size: 18px; cursor: pointer;"><i class="fa fa-search"></i></button>
-                <select name="sort" onchange="this.form.submit()" style="background-color: #15202b; color: #f5f5f5; border: 1px solid #374d65; border-radius: 6px; padding: 6px;">
-                    <option value="" {% if not sort_key %}selected{% endif %}>Tri par défaut</option>
-                    <option value="category" {% if sort_key == 'category' %}selected{% endif %}>Catégorie</option>
-                    <option value="rating" {% if sort_key == 'rating' %}selected{% endif %}>Couleur</option>
-                </select>
+            <form method="get" action="{{ url_for('index') }}" class="search-form">
+                <input type="text" name="search" placeholder="Rechercher un fournisseur..." value="{{ search_query }}" autocomplete="off">
+                <button type="submit"><i class="fa fa-search"></i></button>
             </form>
+            
+            <div class="filters-section">
+                <div class="filter-toggle" onclick="toggleFilters()">
+                    <i class="fa fa-filter"></i>
+                    <span>Filtres avancés</span>
+                    <i class="fa fa-chevron-down" id="filter-arrow"></i>
+                </div>
+                
+                <div class="filters-content" id="filters-content">
+                    <form method="get" action="{{ url_for('index') }}" id="filter-form">
+                        <input type="hidden" name="search" value="{{ search_query }}">
+                        
+                        <div class="filter-group">
+                            <div class="filter-group-title">Notation</div>
+                            <div class="filter-options">
+                                <label class="filter-checkbox">
+                                    <input type="checkbox" name="rating" value="green" {% if 'green' in selected_ratings %}checked{% endif %}>
+                                    <span>✓ Vert (Super)</span>
+                                </label>
+                                <label class="filter-checkbox">
+                                    <input type="checkbox" name="rating" value="yellow" {% if 'yellow' in selected_ratings %}checked{% endif %}>
+                                    <span>⚠ Jaune (Moyen)</span>
+                                </label>
+                                <label class="filter-checkbox">
+                                    <input type="checkbox" name="rating" value="red" {% if 'red' in selected_ratings %}checked{% endif %}>
+                                    <span>✗ Rouge (Mauvais)</span>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="filter-group">
+                            <div class="filter-group-title">Catégories</div>
+                            <div class="filter-options">
+                                {% for cat in all_categories %}
+                                <label class="filter-checkbox">
+                                    <input type="checkbox" name="category" value="{{ cat }}" {% if cat in selected_categories %}checked{% endif %}>
+                                    <span>{{ cat.capitalize() }}</span>
+                                </label>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        
+                        <div class="filter-group">
+                            <div class="filter-group-title">Trier par</div>
+                            <select name="sort" style="background-color: #273a4b; color: #f5f5f5; border: 1px solid #374d65; border-radius: 6px; padding: 6px; width: 100%;">
+                                <option value="" {% if not sort_key %}selected{% endif %}>Date d'ajout (récent)</option>
+                                <option value="name" {% if sort_key == 'name' %}selected{% endif %}>Nom (A-Z)</option>
+                                <option value="category" {% if sort_key == 'category' %}selected{% endif %}>Catégorie</option>
+                                <option value="rating" {% if sort_key == 'rating' %}selected{% endif %}>Notation (meilleurs d'abord)</option>
+                            </select>
+                        </div>
+                        
+                        <div class="filter-actions">
+                            <button type="submit" class="filter-btn filter-btn-apply">
+                                <i class="fa fa-check"></i> Appliquer
+                            </button>
+                            <button type="button" class="filter-btn filter-btn-reset" onclick="resetFilters()">
+                                <i class="fa fa-undo"></i> Réinitialiser
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
         </div>
         <div class="cards">
             {% for s in suppliers %}
@@ -600,6 +732,38 @@ INDEX_TEMPLATE = r"""
         }
         document.getElementById('scanModal').style.display = 'none';
     }
+    
+    function toggleFilters() {
+        const content = document.getElementById('filters-content');
+        const arrow = document.getElementById('filter-arrow');
+        
+        if (content.classList.contains('active')) {
+            content.classList.remove('active');
+            arrow.style.transform = 'rotate(0deg)';
+        } else {
+            content.classList.add('active');
+            arrow.style.transform = 'rotate(180deg)';
+        }
+    }
+    
+    function resetFilters() {
+        // Décocher toutes les checkboxes
+        document.querySelectorAll('#filter-form input[type="checkbox"]').forEach(cb => {
+            cb.checked = false;
+        });
+        // Réinitialiser le tri
+        document.querySelector('#filter-form select[name="sort"]').value = '';
+        // Soumettre le formulaire
+        document.getElementById('filter-form').submit();
+    }
+    
+    // Ouvrir automatiquement les filtres s'il y en a d'actifs
+    document.addEventListener('DOMContentLoaded', function() {
+        const hasActiveFilters = {{ 'true' if (selected_ratings or selected_categories) else 'false' }};
+        if (hasActiveFilters) {
+            toggleFilters();
+        }
+    });
     </script>
 </body>
 </html>
@@ -1455,6 +1619,11 @@ DETAIL_TEMPLATE = """
 def index():
     search_query = request.args.get('search', '').strip()
     sort_key = request.args.get('sort', '').strip()
+    
+    # Récupérer les filtres multiples
+    selected_ratings = request.args.getlist('rating')  # Liste des couleurs cochées
+    selected_categories = request.args.getlist('category')  # Liste des catégories cochées
+    
     conn = get_db()
     cursor = conn.cursor()
     user_id = session['user_id']
@@ -1462,12 +1631,28 @@ def index():
     sql = "SELECT * FROM suppliers WHERE user_id = %s"
     params = [user_id]
     
+    # Filtre de recherche
     if search_query:
         like_query = f'%{search_query}%'
         sql += " AND (name ILIKE %s OR category ILIKE %s OR description ILIKE %s)"
         params.extend([like_query, like_query, like_query])
     
-    if sort_key == 'category':
+    # Filtre par notation (couleurs)
+    if selected_ratings:
+        placeholders = ','.join(['%s'] * len(selected_ratings))
+        sql += f" AND rating IN ({placeholders})"
+        params.extend(selected_ratings)
+    
+    # Filtre par catégories
+    if selected_categories:
+        placeholders = ','.join(['%s'] * len(selected_categories))
+        sql += f" AND category IN ({placeholders})"
+        params.extend(selected_categories)
+    
+    # Tri
+    if sort_key == 'name':
+        sql += " ORDER BY name ASC"
+    elif sort_key == 'category':
         sql += " ORDER BY category ASC, name ASC"
     elif sort_key == 'rating':
         sql += " ORDER BY CASE rating WHEN 'green' THEN 1 WHEN 'yellow' THEN 2 WHEN 'red' THEN 3 ELSE 4 END, created_at DESC, name ASC"
@@ -1487,6 +1672,9 @@ def index():
         suppliers=rows,
         search_query=search_query,
         sort_key=sort_key,
+        selected_ratings=selected_ratings,
+        selected_categories=selected_categories,
+        all_categories=CATEGORIES,
         total_suppliers=total,
         username=username,
         is_admin=is_admin()

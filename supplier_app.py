@@ -125,78 +125,9 @@ def is_admin() -> bool:
 @app.route('/analyze_card', methods=['POST'])
 @login_required
 def analyze_card():
-    if 'card_image' not in request.files:
-        return jsonify({'error': 'Aucune image reçue'}), 400
-    uploaded = request.files['card_image']
-    if uploaded.filename == '':
-        return jsonify({'error': 'Aucune image reçue'}), 400
-    image_data = uploaded.read()
-
-    endpoint = os.environ.get('AZURE_ENDPOINT')
-    key = os.environ.get('AZURE_KEY')
-    if not endpoint or not key:
-        return jsonify({'error': 'Configuration Azure manquante'}), 500
-
-    analyze_url = f"{endpoint.rstrip('/')}/formrecognizer/documentModels/prebuilt-businessCard:analyze?api-version=2023-07-31"
-    headers = {
-        'Ocp-Apim-Subscription-Key': key,
-        'Content-Type': uploaded.mimetype or 'application/octet-stream'
-    }
-    try:
-        response = requests.post(analyze_url, headers=headers, data=image_data)
-    except Exception as exc:
-        return jsonify({'error': f'Erreur de connexion au service Azure : {exc}'})
-    
-    if response.status_code != 202:
-        return jsonify({'error': 'Échec de l\'analyse', 'details': response.text}), 500
-    result_url = response.headers.get('Operation-Location')
-    if not result_url:
-        return jsonify({'error': 'Réponse inattendue du service Azure'}), 500
-
-    result_data = None
-    for _ in range(30):
-        time.sleep(1)
-        try:
-            result_resp = requests.get(result_url, headers={'Ocp-Apim-Subscription-Key': key})
-            result_json = result_resp.json()
-        except Exception:
-            continue
-        status = result_json.get('status')
-        if status == 'succeeded':
-            result_data = result_json
-            break
-        elif status == 'failed':
-            return jsonify({'error': 'Analyse de la carte échouée'}), 500
-    if result_data is None:
-        return jsonify({'error': 'Analyse incomplète'}), 500
-
-    name = ''
-    phone = ''
-    try:
-        documents = result_data['analyzeResult']['documents']
-        if documents:
-            fields = documents[0].get('fields', {})
-            names_list = fields.get('contactNames', {}).get('valueArray', [])
-            full_names = []
-            for item in names_list:
-                obj = item.get('valueObject', {})
-                first = obj.get('firstName', {}).get('value', '')
-                last = obj.get('lastName', {}).get('value', '')
-                combined = (first + ' ' + last).strip()
-                if combined:
-                    full_names.append(combined)
-            if full_names:
-                name = full_names[0]
-            mobiles = fields.get('mobilePhones', {}).get('valueArray', [])
-            if mobiles:
-                phone = mobiles[0].get('valueString', '')
-            if not phone:
-                companies = fields.get('companyPhones', {}).get('valueArray', [])
-                if companies:
-                    phone = companies[0].get('valueString', '')
-    except Exception:
-        pass
-    return jsonify({'name': name, 'phone': phone})
+    # Force l'utilisation de Tesseract.js côté client
+    # En retournant une erreur, le frontend utilisera automatiquement l'OCR local
+    return jsonify({'error': 'Utilisation OCR local'}), 500
 
 
 ###############################################################################
